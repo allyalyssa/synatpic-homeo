@@ -1,0 +1,10 @@
+mne
+numpy
+pandas
+scipy
+matplotlib
+seaborn
+torch
+scikit-learn
+yasa
+patool
