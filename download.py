@@ -12,6 +12,7 @@ Run:  python download.py            # both datasets
 import re
 import subprocess
 import sys
+import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
@@ -25,14 +26,30 @@ def _stream(url, dest, chunk=1 << 20, quiet=False):
     if dest.exists() and dest.stat().st_size > 0:
         return
     tmp = dest.with_suffix(dest.suffix + ".part")
-    with requests.get(url, stream=True, timeout=60) as r:
+    with requests.get(url, stream=True, timeout=(30, 120)) as r:
         r.raise_for_status()
         with open(tmp, "wb") as f:
             for block in r.iter_content(chunk):
                 f.write(block)
     tmp.rename(dest)
     if not quiet:
-        print(f"  done: {dest.name} ({dest.stat().st_size/1e6:.0f} MB)")
+        print(f"  done: {dest.name} ({dest.stat().st_size/1e6:.0f} MB)", flush=True)
+
+
+def _fetch_retry(job, retries=5):
+    """Download one (url, dest) with retries. PhysioNet throttles and drops
+    connections, so a single timeout must not abort the whole batch."""
+    url, dest = job
+    for attempt in range(retries):
+        try:
+            _stream(url, dest)
+            return True
+        except Exception as e:
+            if attempt == retries - 1:
+                print(f"  FAILED {dest.name} after {retries} tries: {e}", flush=True)
+                return False
+            time.sleep(3 * (attempt + 1))
+    return False
 
 
 def download_dreams():
@@ -81,11 +98,15 @@ def download_sleep_edf(workers=8):
     for psg, hyp in pairs:
         jobs += [(SLEEP_EDF["base_url"] + psg, out / psg),
                  (SLEEP_EDF["base_url"] + hyp, out / hyp)]
-    print(f"Sleep-EDF: {len(pairs)} pairs ({len(jobs)} files) via {workers} workers")
+    todo = [j for j in jobs if not (j[1].exists() and j[1].stat().st_size > 0)]
+    print(f"Sleep-EDF: {len(pairs)} pairs; {len(jobs) - len(todo)} files already on "
+          f"disk, {len(todo)} to fetch via {workers} workers", flush=True)
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        list(ex.map(lambda j: _stream(*j), jobs))
-    print(f"Sleep-EDF: {len(list(out.glob('*-PSG.edf')))} PSG files on disk")
+        results = list(ex.map(_fetch_retry, todo))
+    n_psg = len(list(out.glob("*-PSG.edf")))
+    print(f"Sleep-EDF: {n_psg}/{len(pairs)} PSG files on disk "
+          f"({results.count(False)} files still failing this run)", flush=True)
 
 
 if __name__ == "__main__":
