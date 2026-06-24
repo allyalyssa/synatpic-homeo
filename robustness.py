@@ -123,9 +123,12 @@ def write_report(dataset):
 
 
 if __name__ == "__main__":
-    ds = "dreams"
-    if len(sys.argv) > 1 and sys.argv[1] == "permute":
-        permutation_test(ds)
-    else:
-        determinism_check(ds)
-    write_report(ds)
+    args = sys.argv[1:]
+    do_perm = "permute" in args
+    datasets = [a for a in args if a != "permute"] or ["dreams"]
+    for ds in datasets:
+        if do_perm:
+            permutation_test(ds)
+        else:
+            determinism_check(ds)
+        write_report(ds)
