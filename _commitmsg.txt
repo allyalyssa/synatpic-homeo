@@ -1,0 +1,18 @@
+Step 3: model, training core, and synthetic sanity check
+
+model.py: bidirectional LSTM (hidden 128, 3 layers, dropout 0.4) + temporal
+attention + dual classification/regression head.
+train.py: reusable set_seed / fit (dual loss, early stopping) / predict.
+interpret.py: faithful gradient saliency (temporal + channel) plus an attention
+readout flagged as unfaithful.
+synthetic_check.py: separable curves with signal confined to early bins.
+
+Key finding from the sanity check: the model classifies the synthetic data
+perfectly (acc/AUC = 1.0) but its ATTENTION is flat and does NOT localize to the
+signal bins, across every encoder depth/direction tested. Input-gradient
+SALIENCY does localize (77% of mass on the signal bins, peak at bin 0, recovering
+the injected decay). So saliency, not attention, is the faithful temporal
+readout. This is exactly the bug the sanity check exists to catch; we keep the
+attention layer but base scientific claims on saliency.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
