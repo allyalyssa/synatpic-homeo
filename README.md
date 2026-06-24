@@ -16,12 +16,15 @@ predicts?
 
 ## Key findings (DREAMS, n=27 patients + n=20 healthy)
 
-1. **Slope/density dissociation.** Slow-wave *density* falls steeply overnight
-   (15.8 → 4.6 waves/min, p<1e-4) but per-wave *slope* is flat (p=0.79). In these
-   data, homeostatic downscaling shows up as *fewer* slow waves, not *shallower*
-   ones — so the classic slope proxy alone carries almost no signal here. We
-   therefore model both measures and the model leans on density (66–79% of
-   saliency).
+1. **Slope/density dissociation (DREAMS).** In both DREAMS cohorts, slow-wave
+   *density* falls steeply overnight (healthy 16.6 → 4.6 waves/min, p≈3e-6) but
+   per-wave *slope* is flat (p=0.70–0.13) — homeostatic downscaling shows up as
+   *fewer* waves, not *shallower* ones, so the classic slope proxy alone carries
+   almost no signal there. We therefore model both measures; the model leans on
+   density (66–79% of saliency). Note this dissociation is **DREAMS-specific**:
+   Sleep-EDF shows *both* slope and density declining (slope p≈0.001), a genuine
+   cross-dataset difference (montage/hardware/population) we report rather than
+   smooth over.
 2. **Attention is not a faithful localizer.** On synthetic data with a known
    answer, the model classifies perfectly yet its attention is flat; only
    gradient saliency localizes. We keep attention but base claims on saliency

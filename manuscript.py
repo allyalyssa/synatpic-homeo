@@ -102,9 +102,10 @@ def build(datasets):
                      f"({'frontal (SHY)' if mod['top_region'] == 'frontal' else 'not frontal (deviates)'}).")
 
     L += ["\n## Interpretation",
-          "In these data the homeostatic decline is carried by slow-wave DENSITY, not by "
-          "per-wave slope, so the slope proxy that motivates the study is the weaker signal "
-          "here. The model leans on the late night because density is near-ceiling early for "
+          "In DREAMS the homeostatic decline is carried mainly by slow-wave DENSITY rather "
+          "than per-wave slope (in Sleep-EDF both decline), so the slope proxy that motivates "
+          "the study is the weaker signal there. The model leans on the late night because "
+          "density is near-ceiling early for "
           "everyone; the between-subject variance that separates dissipaters lives late. The "
           "absence of frontal predominance and early-NREM dominance is a deviation from SHY "
           "and, given the honest caveats below, is best read as a hypothesis to test at "
