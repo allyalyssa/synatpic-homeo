@@ -1,18 +1,16 @@
-Step 3: model, training core, and synthetic sanity check
+Stage 3-4: slow-wave detection + dissipation curves (+ parallel download)
 
-model.py: bidirectional LSTM (hidden 128, 3 layers, dropout 0.4) + temporal
-attention + dual classification/regression head.
-train.py: reusable set_seed / fit (dual loss, early stopping) / predict.
-interpret.py: faithful gradient saliency (temporal + channel) plus an attention
-readout flagged as unfaithful.
-synthetic_check.py: separable curves with signal confined to early bins.
+slow_waves.py: yasa.sw_detect per subject on concatenated NREM epochs; records
+each wave's negative slope (SHY proxy) and real night time via epoch_idx.
+dissipation.py: bin slopes into 12 temporal bins x channel; dissipation rate =
+fractional decline of channel-averaged curve; median-split fast/slow label.
+download.py: Sleep-EDF download now parallel (PhysioNet throttles ~0.15 MB/s per
+connection); idempotent + resumable.
 
-Key finding from the sanity check: the model classifies the synthetic data
-perfectly (acc/AUC = 1.0) but its ATTENTION is flat and does NOT localize to the
-signal bins, across every encoder depth/direction tested. Input-gradient
-SALIENCY does localize (77% of mass on the signal bins, peak at bin 0, recovering
-the injected decay). So saliency, not attention, is the faithful temporal
-readout. This is exactly the bug the sanity check exists to catch; we keep the
-attention layer but base scientific claims on saliency.
+First real result (DREAMS Patients, n=27): the cohort-average dissipation curve
+is flat with a slight UPWARD tilt (early bins 0.997 vs late 1.047; paired
+t=-1.40, p=0.17). Slow-wave slope does NOT decline across the night as SHY
+predicts in this cohort. Most likely confound: DREAMS Patients have sleep
+pathologies. Pulling the healthy DREAMS Subjects DB to test SHY on clean sleepers.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

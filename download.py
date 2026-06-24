@@ -13,30 +13,26 @@ import re
 import subprocess
 import sys
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
 from config import PATHS, DREAMS, SLEEP_EDF, RAR_TAR, ensure_dirs
 
 
-def _stream(url, dest, chunk=1 << 20):
-    """Download `url` to `dest`, skipping if already present, with light progress."""
+def _stream(url, dest, chunk=1 << 20, quiet=False):
+    """Download `url` to `dest`, skipping if already present. Atomic via .part."""
     if dest.exists() and dest.stat().st_size > 0:
-        print(f"  skip (exists): {dest.name}")
         return
     tmp = dest.with_suffix(dest.suffix + ".part")
     with requests.get(url, stream=True, timeout=60) as r:
         r.raise_for_status()
-        total = int(r.headers.get("content-length", 0))
-        done = 0
         with open(tmp, "wb") as f:
             for block in r.iter_content(chunk):
                 f.write(block)
-                done += len(block)
-                if total:
-                    print(f"\r  {dest.name}: {done/1e6:6.0f}/{total/1e6:.0f} MB", end="")
-        print()
     tmp.rename(dest)
+    if not quiet:
+        print(f"  done: {dest.name} ({dest.stat().st_size/1e6:.0f} MB)")
 
 
 def download_dreams():
@@ -62,11 +58,14 @@ def _sleep_edf_listing():
     return sorted(set(re.findall(r"SC\d+[A-Z0-9]*-(?:PSG|Hypnogram)\.edf", html)))
 
 
-def download_sleep_edf():
-    """Download every SC recording as a (PSG, hypnogram) pair.
+def download_sleep_edf(workers=8):
+    """Download every SC recording as a (PSG, hypnogram) pair, in parallel.
 
     Pairing is by the first 6 chars (SC4ssN = subject+night), which is robust to
-    the varying 7th 'device' letter in the PhysioNet naming scheme.
+    the varying 7th 'device' letter in the PhysioNet naming scheme. PhysioNet
+    throttles each connection to ~0.15 MB/s, so we fan out across `workers`
+    connections; the job is idempotent (skips finished files) and can be re-run
+    to resume.
     """
     ensure_dirs()
     out = PATHS["sleep_edf_raw"]
@@ -77,13 +76,16 @@ def download_sleep_edf():
     pairs = [(p, hyps[p[:6]]) for p in psgs if p[:6] in hyps]
     if SLEEP_EDF["max_subjects"]:
         pairs = pairs[: SLEEP_EDF["max_subjects"]]
-    print(f"Sleep-EDF: {len(pairs)} PSG+hypnogram pairs to fetch")
 
-    for i, (psg, hyp) in enumerate(pairs, 1):
-        print(f"[{i}/{len(pairs)}] {psg[:6]}")
-        _stream(SLEEP_EDF["base_url"] + psg, out / psg)
-        _stream(SLEEP_EDF["base_url"] + hyp, out / hyp)
-    print(f"Sleep-EDF: done, {len(list(out.glob('*-PSG.edf')))} PSG files on disk")
+    jobs = []
+    for psg, hyp in pairs:
+        jobs += [(SLEEP_EDF["base_url"] + psg, out / psg),
+                 (SLEEP_EDF["base_url"] + hyp, out / hyp)]
+    print(f"Sleep-EDF: {len(pairs)} pairs ({len(jobs)} files) via {workers} workers")
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        list(ex.map(lambda j: _stream(*j), jobs))
+    print(f"Sleep-EDF: {len(list(out.glob('*-PSG.edf')))} PSG files on disk")
 
 
 if __name__ == "__main__":
