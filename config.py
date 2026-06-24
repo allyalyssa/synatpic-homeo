@@ -124,6 +124,11 @@ DISS = {
     # fitted decay rate of mean negative slope across the night.
 }
 
+# Canonical scalp regions used to harmonize datasets with different montages
+# (DREAMS 6 ch, Sleep-EDF 2 ch, ANPHY 83 ch all collapse to these three). The
+# frontal region is what the SHY "frontal predominance" claim is tested against.
+REGIONS = ["frontal", "central", "occipital"]
+
 # ---------------------------------------------------------------------------
 # Stage 6-7: model + training
 # ---------------------------------------------------------------------------

@@ -45,7 +45,12 @@ def build_curve(sw_path):
             m = (bin_of == b) & (ch_idx == c)
             if m.any():
                 curve[b, c] = slope[m].mean()
-    return _fill_nan(curve), ch_names
+
+    # center time of each bin, in hours since the first slow wave (onset proxy);
+    # feature engineering turns this into a circadian-phase encoding.
+    centers = (edges[:-1] + edges[1:]) / 2
+    bin_hours = (centers - night.min()) / 3600.0
+    return _fill_nan(curve), ch_names, bin_hours
 
 
 def _fill_nan(curve):
@@ -71,10 +76,10 @@ def run(dataset):
     files = sorted(sw_dir.glob("*.npz"))
     print(f"=== {dataset}: building dissipation curves for {len(files)} subjects ===")
 
-    curves, rates, names = {}, {}, {}
+    curves, rates, names, hours = {}, {}, {}, {}
     for f in files:
-        curve, ch_names = build_curve(f)
-        curves[f.stem], names[f.stem] = curve, ch_names
+        curve, ch_names, bin_hours = build_curve(f)
+        curves[f.stem], names[f.stem], hours[f.stem] = curve, ch_names, bin_hours
         rates[f.stem] = dissipation_rate(curve)
 
     if not rates:
@@ -86,7 +91,7 @@ def run(dataset):
     for subj, curve in curves.items():
         label = int(rates[subj] >= median)
         np.savez(out_dir / f"{subj}.npz", curve=curve, ch_names=names[subj],
-                 rate=rates[subj], label=label)
+                 bin_hours=hours[subj], rate=rates[subj], label=label)
         print(f"  {subj:14} rate {rates[subj]:+.4f} -> {'FAST' if label else 'slow'}")
 
 
