@@ -1,0 +1,14 @@
+# Data and large artifacts never go to GitHub (multi-GB EDF/RAR downloads)
+data/
+outputs/
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# Scratch
+_audit_cells.txt
+*.tmp

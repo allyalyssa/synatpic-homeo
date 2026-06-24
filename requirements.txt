@@ -1,0 +1,10 @@
+mne>=1.6
+yasa>=0.6
+numpy
+scipy
+pandas
+scikit-learn
+torch
+matplotlib
+seaborn
+requests
