@@ -74,6 +74,21 @@ SLEEP_EDF = {
     "max_subjects": None,   # None = all ~153 SC recordings; set an int to cap.
 }
 
+# Channel selection is dataset-specific because MNE cannot be trusted to type
+# these EDFs correctly (DREAMS labels ECG/EMG/respiration as "eeg"). A None
+# spec means "keep channels whose name starts with EEG" (works for Sleep-EDF).
+EEG_CHANNELS = {
+    "dreams": ["FP1-A2", "FP2-A1", "CZ-A1", "CZ2-A1", "O1-A2", "O2-A1"],
+    "sleep_edf": None,
+}
+
+# Hypnogram epoch resolution on disk (seconds). DREAMS scores every 5 s; we
+# collapse to the 30 s grid by majority vote. Sleep-EDF annotations carry their
+# own durations so no fixed step is needed.
+DREAMS_HYPNO_STEP_SEC = 5
+# DREAMS AASM codes -> YASA integer stages (0=W,1=N1,2=N2,3=N3,4=REM).
+DREAMS_AASM_MAP = {5: 0, 4: 4, 3: 1, 2: 2, 1: 3}
+
 # ---------------------------------------------------------------------------
 # Stage 2: preprocessing
 # ---------------------------------------------------------------------------
