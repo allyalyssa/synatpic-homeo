@@ -20,17 +20,21 @@ OUTPUTS = ROOT / "outputs"
 # One entry per pipeline stage / dataset. Created on demand by ensure_dirs().
 PATHS = {
     # raw downloads (gitignored, large)
-    "dreams_raw":      DATA / "dreams" / "raw",
-    "sleep_edf_raw":   DATA / "sleep_edf" / "raw",
+    "dreams_raw":            DATA / "dreams" / "raw",
+    "dreams_subjects_raw":   DATA / "dreams_subjects" / "raw",
+    "sleep_edf_raw":         DATA / "sleep_edf" / "raw",
     # stage 2: cleaned NREM epochs
-    "dreams_prep":     DATA / "dreams" / "preprocessed",
-    "sleep_edf_prep":  DATA / "sleep_edf" / "preprocessed",
+    "dreams_prep":           DATA / "dreams" / "preprocessed",
+    "dreams_subjects_prep":  DATA / "dreams_subjects" / "preprocessed",
+    "sleep_edf_prep":        DATA / "sleep_edf" / "preprocessed",
     # stage 3: detected slow waves (one table per subject)
-    "dreams_sw":       DATA / "dreams" / "slow_waves",
-    "sleep_edf_sw":    DATA / "sleep_edf" / "slow_waves",
+    "dreams_sw":             DATA / "dreams" / "slow_waves",
+    "dreams_subjects_sw":    DATA / "dreams_subjects" / "slow_waves",
+    "sleep_edf_sw":          DATA / "sleep_edf" / "slow_waves",
     # stage 4: per-channel dissipation curves
-    "dreams_curves":   DATA / "dreams" / "dissipation_curves",
-    "sleep_edf_curves":DATA / "sleep_edf" / "dissipation_curves",
+    "dreams_curves":         DATA / "dreams" / "dissipation_curves",
+    "dreams_subjects_curves":DATA / "dreams_subjects" / "dissipation_curves",
+    "sleep_edf_curves":      DATA / "sleep_edf" / "dissipation_curves",
     # stage 5: harmonized model-ready tensors
     "harmonized":      DATA / "harmonized",
     # stage 6-8 artifacts
@@ -79,6 +83,7 @@ SLEEP_EDF = {
 # spec means "keep channels whose name starts with EEG" (works for Sleep-EDF).
 EEG_CHANNELS = {
     "dreams": ["FP1-A2", "FP2-A1", "CZ-A1", "CZ2-A1", "O1-A2", "O2-A1"],
+    "dreams_subjects": ["FP1-A2", "FP2-A1", "CZ-A1", "CZ2-A1", "O1-A2", "O2-A1"],
     "sleep_edf": None,
 }
 

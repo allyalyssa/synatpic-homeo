@@ -63,30 +63,42 @@ def summarize(dataset):
     gradient saliency from subjects each fold never trained on.
     """
     d = np.load(PATHS["logs"] / f"{dataset}_oof.npz", allow_pickle=True)
-    sal = d["oof_sal"]                         # (N, 12, 5): regions then sin,cos
+    sal = d["oof_sal"]                         # (N, 12, n_features)
     attn = d["oof_attn"].mean(0)              # (12,) flagged-unfaithful readout
-    n_reg = len(REGIONS)
+    feats = [str(f) for f in d["feature_names"]]
     auc, lo, hi = float(d["auc"]), float(d["auc_lo"]), float(d["auc_hi"])
 
-    # temporal importance: region-feature saliency per bin (exclude circadian dims)
-    temporal = sal[:, :, :n_reg].mean(axis=2)            # (N, 12)
+    # parse the feature layout by name (robust to slope-only vs slope+density)
+    region_idx = [i for i, f in enumerate(feats) if any(f.startswith(r) for r in REGIONS)]
+    slope_idx = [i for i, f in enumerate(feats) if f.endswith("_slope")]
+    dens_idx = [i for i, f in enumerate(feats) if f.endswith("_dens")]
+
+    # temporal importance: mean saliency over all region features, per bin
+    temporal = sal[:, :, region_idx].mean(axis=2)        # (N, 12)
     t_prof = temporal.mean(0)
     t_prof = t_prof / t_prof.sum()
-    early = temporal[:, :3].mean(1)
-    late = temporal[:, 9:].mean(1)
-    t_stat, t_p = stats.ttest_rel(early, late)
+    early, late = temporal[:, :3].mean(1), temporal[:, 9:].mean(1)
+    t_p = stats.ttest_rel(early, late)[1]
 
-    # spatial importance: per-region saliency over bins
-    region = sal[:, :, :n_reg].mean(axis=1)              # (N, 3)
+    # spatial importance: per-region saliency (summing that region's measures)
+    region = np.stack([sal[:, :, [i for i in region_idx if feats[i].startswith(r)]].mean((1, 2))
+                       for r in REGIONS], axis=1)         # (N, 3)
     r_prof = region.mean(0)
     r_prof = r_prof / r_prof.sum()
     fi = REGIONS.index("frontal")
-    others = [i for i in range(n_reg) if i != fi]
-    f_stat, f_p = stats.ttest_rel(region[:, fi], region[:, others].mean(1))
+    others = [i for i in range(len(REGIONS)) if i != fi]
+    f_p = stats.ttest_rel(region[:, fi], region[:, others].mean(1))[1]
+
+    # which measure does the model lean on, slope or density?
+    measure = None
+    if slope_idx and dens_idx:
+        s = sal[:, :, slope_idx].mean()
+        de = sal[:, :, dens_idx].mean()
+        measure = (s / (s + de), de / (s + de))           # (slope share, density share)
 
     _plot_interpretation(dataset, t_prof, attn, r_prof)
     text = _writeup(dataset, auc, lo, hi, t_prof, early, late, t_p,
-                    r_prof, region[:, fi].mean(), f_p)
+                    r_prof, region[:, fi].mean(), f_p, measure)
     out = PATHS["logs"].parent / f"{dataset}_interpretation.md"
     out.write_text(text, encoding="utf-8")
     print(text)
@@ -120,11 +132,20 @@ def _plot_interpretation(dataset, t_prof, attn, r_prof):
     print(f"figure saved: {p}")
 
 
-def _writeup(dataset, auc, lo, hi, t_prof, early, late, t_p, r_prof, frontal_mean, f_p):
+def _writeup(dataset, auc, lo, hi, t_prof, early, late, t_p, r_prof, frontal_mean, f_p,
+             measure=None):
     early_share = t_prof[:3].sum()
     late_share = t_prof[9:].sum()
     top_region = REGIONS[int(np.argmax(r_prof))]
     temporal_dir = "early" if early.mean() > late.mean() else "late"
+    measure_line = []
+    if measure is not None:
+        measure_line = [f"\n## Which measure does it use?",
+                        f"- Saliency split: slope {measure[0]:.0%} vs density {measure[1]:.0%}. "
+                        + ("The model leans on density, consistent with density (not per-wave "
+                           "slope) carrying the overnight homeostatic decline in these data."
+                           if measure[1] > measure[0] else
+                           "The model leans on per-wave slope.")]
     L = [f"# {dataset}: interpretation\n",
          f"**Classifier (held-out):** AUC {auc:.3f}, 95% CI [{lo:.3f}, {hi:.3f}]. ",
          "The CI " + ("excludes" if lo > 0.5 else "includes") +
@@ -153,8 +174,9 @@ def _writeup(dataset, auc, lo, hi, t_prof, early, late, t_p, r_prof, frontal_mea
          "partly tautological; the saliency pattern is the real test, not the accuracy.",
          "- Attention does not localize (shown on synthetic data); only gradient "
          "saliency is treated as faithful.",
-         "- DREAMS Patients carry sleep pathology - a confound for a homeostasis claim."]
-    return "\n".join(L)
+         "- In DREAMS, per-wave slope is flat overnight while density declines; the "
+         "slope-based SHY proxy alone carries little signal here."]
+    return "\n".join(L + measure_line)
 
 
 if __name__ == "__main__":

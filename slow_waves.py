@@ -52,6 +52,9 @@ def detect_subject(npz_path):
         "ch_idx": ch_idx,
         "slope": df["Slope"].values.astype(float),
         "night_sec": night_sec.astype(float),
+        # times of the retained NREM epochs; needed to normalize wave counts into
+        # a density (waves per minute of NREM) per temporal bin.
+        "nrem_sec": (epoch_idx * PREP["epoch_sec"]).astype(float),
         "ch_names": ch_names,
     }
 

@@ -122,7 +122,8 @@ def _majority(block):
     return int(np.bincount(valid).argmax())
 
 
-HYPNO_LOADERS = {"sleep_edf": hypnogram_sleep_edf, "dreams": hypnogram_dreams}
+HYPNO_LOADERS = {"sleep_edf": hypnogram_sleep_edf, "dreams": hypnogram_dreams,
+                 "dreams_subjects": hypnogram_dreams}
 
 
 def preprocess_subject(psg_path, hyp_path, subject, dataset):
@@ -195,11 +196,13 @@ def run_sleep_edf():
     print(f"Sleep-EDF: {kept}/{len(psgs)} subjects produced clean NREM epochs")
 
 
-def run_dreams():
+def run_dreams_like(dataset, glob_pat):
+    """DREAMS Patients and Subjects share montage + AASM hypnograms; only the
+    file-name stem differs (patient* vs subject*)."""
     ensure_dirs()
-    raw_dir, out_dir = PATHS["dreams_raw"], PATHS["dreams_prep"]
-    psgs = sorted(raw_dir.glob("patient*.edf"))
-    print(f"=== DREAMS: {len(psgs)} EDF files ===")
+    raw_dir, out_dir = PATHS[f"{dataset}_raw"], PATHS[f"{dataset}_prep"]
+    psgs = sorted(raw_dir.glob(glob_pat))
+    print(f"=== {dataset}: {len(psgs)} EDF files ===")
     kept = 0
     for psg in psgs:
         subj = psg.stem
@@ -207,16 +210,26 @@ def run_dreams():
         if not hyp.exists():
             print(f"  {subj}: no AASM hypnogram, skipping")
             continue
-        res = preprocess_subject(psg, hyp, subj, "dreams")
+        res = preprocess_subject(psg, hyp, subj, dataset)
         if res:
             np.savez(out_dir / f"{subj}.npz", **res)
             kept += 1
-    print(f"DREAMS: {kept}/{len(psgs)} subjects produced clean NREM epochs")
+    print(f"{dataset}: {kept}/{len(psgs)} subjects produced clean NREM epochs")
+
+
+def run_dreams():
+    run_dreams_like("dreams", "patient*.edf")
+
+
+def run_dreams_subjects():
+    run_dreams_like("dreams_subjects", "subject*.edf")
 
 
 if __name__ == "__main__":
     which = sys.argv[1] if len(sys.argv) > 1 else "all"
     if which in ("all", "dreams"):
         run_dreams()
+    if which in ("all", "dreams_subjects"):
+        run_dreams_subjects()
     if which in ("all", "sleep_edf"):
         run_sleep_edf()

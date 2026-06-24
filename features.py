@@ -25,7 +25,10 @@ import numpy as np
 
 from config import PATHS, REGIONS, ensure_dirs
 
-FEATURE_NAMES = REGIONS + ["sin_phase", "cos_phase"]
+# feature layout: per-region slope, then per-region density, then circadian.
+FEATURE_NAMES = ([f"{r}_slope" for r in REGIONS]
+                 + [f"{r}_dens" for r in REGIONS]
+                 + ["sin_phase", "cos_phase"])
 
 
 def region_of(name):
@@ -40,28 +43,29 @@ def region_of(name):
     return None
 
 
-def subject_features(npz_path):
-    d = np.load(npz_path, allow_pickle=True)
-    curve = d["curve"].astype(float)                  # (12, n_ch)
-    ch_names = [str(c) for c in d["ch_names"]]
-    bin_hours = d["bin_hours"]
-
-    curve = curve / (curve.mean() + 1e-9)             # per-subject amplitude norm
-
+def _regionize(curve, ch_names):
+    """Per-subject-normalized curve (12, n_ch) -> region curve (12, n_regions)."""
+    curve = curve / (curve.mean() + 1e-9)
     nb = curve.shape[0]
     reg = np.full((nb, len(REGIONS)), np.nan)
     for ri, rname in enumerate(REGIONS):
         cols = [i for i, c in enumerate(ch_names) if region_of(c) == rname]
         if cols:
             reg[:, ri] = curve[:, cols].mean(axis=1)
-    # a region absent in this montage gets the row mean (neutral, keeps shape)
-    row_mean = np.nanmean(reg, axis=1, keepdims=True)
-    reg = np.where(np.isnan(reg), row_mean, reg)
+    row_mean = np.nanmean(reg, axis=1, keepdims=True)        # absent region -> neutral
+    return np.where(np.isnan(reg), row_mean, reg)
 
-    phase = 2 * np.pi * bin_hours / 24.0
+
+def subject_features(npz_path):
+    d = np.load(npz_path, allow_pickle=True)
+    ch_names = [str(c) for c in d["ch_names"]]
+    slope_reg = _regionize(d["slope_curve"].astype(float), ch_names)
+    dens_reg = _regionize(d["density_curve"].astype(float), ch_names)
+
+    phase = 2 * np.pi * d["bin_hours"] / 24.0
     circ = np.stack([np.sin(phase), np.cos(phase)], axis=1)   # (12, 2)
 
-    X = np.concatenate([reg, circ], axis=1).astype("float32")
+    X = np.concatenate([slope_reg, dens_reg, circ], axis=1).astype("float32")
     return X, int(d["label"]), float(d["rate"])
 
 

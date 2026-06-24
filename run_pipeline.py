@@ -16,7 +16,9 @@ import features
 import train
 import interpret
 
-RUNNERS = {"dreams": preprocess.run_dreams, "sleep_edf": preprocess.run_sleep_edf}
+RUNNERS = {"dreams": preprocess.run_dreams,
+           "dreams_subjects": preprocess.run_dreams_subjects,
+           "sleep_edf": preprocess.run_sleep_edf}
 
 
 def run(dataset):
