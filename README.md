@@ -7,35 +7,61 @@ Synaptic Homeostasis Hypothesis (SHY; Tononi & Cirelli, 2006)?
 
 The negative half-wave slope of slow waves is a known proxy for synaptic
 strength. SHY predicts it is steepest in early NREM and declines across the
-night as synapses downscale. We model each subject's per-channel **dissipation
-curve** (normalized slope across 12 temporal bins) as a multivariate time
-series, train a bidirectional LSTM with temporal attention + a dual
-classification/regression head, and read the **attention weights and channel
-saliency** as the scientific payload: does the model attend to early NREM and
-weight frontal channels, as SHY predicts?
+night as synapses downscale. We model each subject's per-region **dissipation
+curve** (slope *and* slow-wave density across 12 temporal bins) as a multivariate
+time series, train a bidirectional LSTM with temporal attention + a dual
+classification/regression head, and read **gradient saliency** as the scientific
+payload: does the model rely on early NREM and weight frontal regions, as SHY
+predicts?
+
+## Key findings (DREAMS, n=27 patients + n=20 healthy)
+
+1. **Slope/density dissociation.** Slow-wave *density* falls steeply overnight
+   (15.8 → 4.6 waves/min, p<1e-4) but per-wave *slope* is flat (p=0.79). In these
+   data, homeostatic downscaling shows up as *fewer* slow waves, not *shallower*
+   ones — so the classic slope proxy alone carries almost no signal here. We
+   therefore model both measures and the model leans on density (66–79% of
+   saliency).
+2. **Attention is not a faithful localizer.** On synthetic data with a known
+   answer, the model classifies perfectly yet its attention is flat; only
+   gradient saliency localizes. We keep attention but base claims on saliency
+   ("Attention is not Explanation", Jain & Wallace 2019).
+3. **The model deviates from SHY** in both cohorts: saliency concentrates on
+   *late* NREM (p≈0.001–0.003), not early, and shows *no frontal predominance*.
+   The late-night emphasis is interpretable — density is near-ceiling early for
+   everyone, so the between-subject variance that separates fast/slow dissipaters
+   lives late in the night. Classification stays modest (AUC 0.76 / 0.79, CIs
+   exclude 0.5 but are wide at this N), so these are exploratory signals.
 
 ## Pipeline (9 stages)
 
 | Stage | Module | What it does |
 |-------|--------|--------------|
-| 1 Download | `download.py` | Fetch + extract DREAMS (Zenodo) and Sleep-EDF (PhysioNet) |
-| 2 Preprocess | `preprocess.py` | EDF → filtered, referenced, expert-staged clean NREM epochs |
-| 3 Slow waves | `slow_waves.py` | `yasa.sw_detect` → per-wave negative slope |
-| 4 Dissipation | `dissipation.py` | Slopes → per-channel 12-bin curves + fast/slow labels |
-| 5 Features | `features.py` | Curves → harmonized tensors (+ circadian time encoding) |
-| 6 Model | `model.py` | Bi-LSTM + temporal attention + dual head |
-| 7 Training | `train.py` | Stratified k-fold CV, AUC + Hanley–McNeil CIs, checkpoints |
-| 8 Interpretation | `interpret.py` | Attention + channel-saliency figures |
-| 9 Sanity | `synthetic_check.py` | Synthetic separable data → model must classify it |
+| 1 Download | `download.py` | Fetch + extract DREAMS (Zenodo RAR via bsdtar) and Sleep-EDF (PhysioNet, parallel) |
+| 2 Preprocess | `preprocess.py` | EDF → EEG-by-name, auto-scaled, expert-staged clean NREM epochs (+ per-step diagnostics) |
+| 3 Slow waves | `slow_waves.py` | `yasa.sw_detect` → per-wave negative slope + time in night |
+| 4 Dissipation | `dissipation.py` | Slope **and** density → per-region 12-bin curves + density-decline label |
+| 5 Features | `features.py` | Curves → harmonized (N,12,8) tensors (slope+density regions + circadian sin/cos) |
+| 6 Model | `model.py` | Bi-LSTM (128, 3 layers, dropout 0.4) + temporal attention + dual head |
+| 7 Training | `train.py` | Stratified k-fold CV, AUC + Hanley–McNeil CIs, checkpoints, OOF saliency |
+| 8 Interpretation | `interpret.py` | Gradient saliency (temporal/regional) vs SHY; attention shown but flagged |
+| — Sanity | `synthetic_check.py` | Separable synthetic data → model must classify it + saliency must localize |
+| — Robustness | `robustness.py` | Determinism, label-permutation test, validity report |
+| — Compare | `compare.py` | Cross-cohort SHY readouts (patients vs healthy vs Sleep-EDF) |
 
-All paths and hyperparameters live in `config.py`. Run a stage with, e.g.,
-`python download.py`. `data/` and `outputs/` are gitignored (multi-GB).
+All paths and hyperparameters live in `config.py`. Run everything with
+`python run_pipeline.py dreams dreams_subjects` (raw data must be downloaded
+first via `python download.py`). `data/` and `outputs/` are gitignored (multi-GB).
 
 ## Honest limitations
-- **Small N** (~26 DREAMS subjects): any classifier result needs confidence
-  intervals, not point estimates, and invites overfitting.
-- **Proxy labels**: fast/slow "dissipater" is a median split on a fitted decay
-  rate, not a biological ground truth.
-- **Cross-dataset confounds**: DREAMS (clinical patients) and Sleep-EDF differ
-  in montage, hardware, and population; pooling them mixes signal with batch.
+- **Small N** (27 DREAMS Patients, 20 Subjects): results are reported with
+  Hanley–McNeil AUC CIs and a label-permutation test, not point estimates.
+- **Proxy label**: fast/slow "dissipater" is a median split on a fitted density
+  decline rate, a deterministic function of the input — so accuracy is partly
+  tautological; the saliency *pattern* is the real test.
+- **Slope vs density**: the brief's slope proxy is flat overnight here; we report
+  this openly and add density rather than force a slope-based story.
+- **Cohort/cross-dataset confounds**: DREAMS Patients carry sleep pathology;
+  DREAMS/Sleep-EDF differ in montage/hardware/population, so we keep datasets
+  separate rather than pool.
 - The original Colab notebook is kept as `notebooks` for provenance.
