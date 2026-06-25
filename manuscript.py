@@ -96,6 +96,12 @@ def build(datasets):
         if mod:
             perm = f", permutation p={mod['perm_p']:.3f}" if mod["perm_p"] is not None else ""
             L.append(f"- Classifier AUC {mod['auc']:.2f} [{mod['lo']:.2f}, {mod['hi']:.2f}]{perm}.")
+            if mod["auc"] > 0.95:
+                L.append("  - CAUTION: a near-ceiling AUC at this N is label-RECOVERABILITY, not "
+                         "predictive validity. The label is a deterministic function of the density "
+                         "curve, which is itself a model input, so with enough subjects the model "
+                         "simply recomputes it. The dissociation and saliency are the meaningful "
+                         "results here; this number is not.")
             L.append(f"- Temporal saliency: early {mod['early']:.0%} vs late {mod['late']:.0%} "
                      f"-> leans {'early (SHY)' if mod['early'] > mod['late'] else 'late (deviates)'}.")
             L.append(f"- Top region: {mod['top_region']} "
