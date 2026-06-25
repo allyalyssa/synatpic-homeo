@@ -14,17 +14,16 @@ classification/regression head, and read **gradient saliency** as the scientific
 payload: does the model rely on early NREM and weight frontal regions, as SHY
 predicts?
 
-## Key findings (DREAMS, n=27 patients + n=20 healthy)
+## Key findings (DREAMS n=27 patients + n=20 healthy; Sleep-EDF n=153)
 
-1. **Slope/density dissociation (DREAMS).** In both DREAMS cohorts, slow-wave
-   *density* falls steeply overnight (healthy 16.6 → 4.6 waves/min, p≈3e-6) but
-   per-wave *slope* is flat (p=0.70–0.13) — homeostatic downscaling shows up as
-   *fewer* waves, not *shallower* ones, so the classic slope proxy alone carries
-   almost no signal there. We therefore model both measures; the model leans on
-   density (66–79% of saliency). Note this dissociation is **DREAMS-specific**:
-   Sleep-EDF shows *both* slope and density declining (slope p≈0.001), a genuine
-   cross-dataset difference (montage/hardware/population) we report rather than
-   smooth over.
+1. **Slope/density dissociation (all three cohorts at full N).** Slow-wave
+   *density* falls steeply overnight (DREAMS healthy 16.6 → 4.6 waves/min, p≈3e-6;
+   Sleep-EDF 3.3 → 1.0, p≈4e-10) but per-wave *slope* is essentially flat
+   (p=0.13–0.70) — homeostatic downscaling shows up as *fewer* waves, not
+   *shallower* ones, so the classic slope proxy alone carries almost no signal. We
+   therefore model both measures; the model leans on density (66–79% of saliency).
+   (An apparent Sleep-EDF slope decline at n=30 did not survive at n=153 — a
+   small-sample fluctuation, which is exactly why we scaled the replication up.)
 2. **Attention is not a faithful localizer.** On synthetic data with a known
    answer, the model classifies perfectly yet its attention is flat; only
    gradient saliency localizes. We keep attention but base claims on saliency
