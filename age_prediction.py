@@ -27,7 +27,7 @@ import torch
 import mne
 from scipy import stats
 from sklearn.metrics import r2_score
-from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.model_selection import GroupKFold, train_test_split
 
 from config import PATHS, SEED, REGIONS, ensure_dirs
 from model import make_model
@@ -74,11 +74,14 @@ def cross_validate_age(k=5, epochs=120):
     y_reg = ((age - mu) / sd).astype("float32")
     y_cls = (age >= np.median(age)).astype("float32")     # old vs young
 
-    skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=SEED)
+    # SUBJECT-grouped CV: Sleep-EDF has ~2 nights/subject, so splitting by
+    # recording would leak a subject across train/test (see controls.py D).
+    groups = np.array([i[3:5] for i in ids])
+    gkf = GroupKFold(n_splits=k)
     pred_age = np.zeros(len(age))
     oof_prob = np.zeros(len(age))
     oof_sal = np.zeros_like(X)
-    for fold, (tr, te) in enumerate(skf.split(X, y_cls)):
+    for fold, (tr, te) in enumerate(gkf.split(X, y_cls, groups)):
         tr2, va = train_test_split(tr, test_size=0.2, stratify=y_cls[tr], random_state=SEED)
         set_seed(SEED + fold)
         model = make_model(X.shape[2])
@@ -169,15 +172,17 @@ def _writeup(r, p_r, r2, mae, auc, lo, hi, oof_sal, feats):
 def permutation_age(n_perm=200, epochs=40):
     d = np.load(PATHS["harmonized"] / "sleep_edf.npz", allow_pickle=True)
     X = d["X"].astype("float32")
-    age = get_ages(list(d["ids"]))
+    ids = [str(i) for i in d["ids"]]
+    age = get_ages(ids)
+    groups = np.array([i[3:5] for i in ids])
     mu, sd = age.mean(), age.std()
 
     def cv_r(ages):
         y_reg = ((ages - mu) / sd).astype("float32")
         y_cls = (ages >= np.median(ages)).astype("float32")
-        skf = StratifiedKFold(5, shuffle=True, random_state=SEED)
+        gkf = GroupKFold(5)
         pred = np.zeros(len(ages))
-        for fold, (tr, te) in enumerate(skf.split(X, y_cls)):
+        for fold, (tr, te) in enumerate(gkf.split(X, y_cls, groups)):
             tr2, va = train_test_split(tr, test_size=0.2, stratify=y_cls[tr], random_state=SEED)
             set_seed(SEED + fold)
             m = make_model(X.shape[2])

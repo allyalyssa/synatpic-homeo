@@ -195,7 +195,68 @@ def control_c(n_bins=12):
         print(f"  VERDICT: {verdict}\n")
 
 
-CONTROLS = {"A": control_a, "B": control_b, "C": control_c}
+# ---------------------------------------------------------------------------
+# Control D — subject-level split audit for the age model
+# ---------------------------------------------------------------------------
+def control_d():
+    from sklearn.model_selection import GroupKFold, StratifiedKFold, train_test_split
+    from train import set_seed, fit, predict, _t
+    from model import make_model
+    from age_prediction import get_ages
+
+    print(f"=== CONTROL D: subject-level split audit (seed={SEED_USED}) ===")
+    print("Sleep-EDF has ~2 nights/subject. If a subject's two nights span train/test the")
+    print("model can memorize the subject, inflating age r. Compare recording-level vs")
+    print("subject-grouped CV.\n")
+
+    d = np.load(PATHS["harmonized"] / "sleep_edf.npz", allow_pickle=True)
+    X = d["X"].astype("float32")
+    ids = [str(i) for i in d["ids"]]
+    age = get_ages(ids)
+    groups = np.array([i[3:5] for i in ids])           # subject number (SC4ssN -> ss)
+
+    uniq = np.unique(groups)
+    per = np.array([(groups == g).sum() for g in uniq])
+    print(f"  {len(ids)} recordings from {len(uniq)} unique subjects "
+          f"({(per == 2).sum()} with 2 nights, {(per == 1).sum()} with 1).")
+
+    mu, sd = age.mean(), age.std()
+    y_reg = ((age - mu) / sd).astype("float32")
+    y_cls = (age >= np.median(age)).astype("float32")
+
+    def run(splitter, grouped):
+        pred = np.zeros(len(age))
+        leak = 0
+        it = splitter.split(X, y_cls, groups) if grouped else splitter.split(X, y_cls)
+        for fold, (tr, te) in enumerate(it):
+            if grouped:
+                leak += len(set(groups[tr]) & set(groups[te]))
+            tr2, va = train_test_split(tr, test_size=0.2, random_state=SEED)
+            set_seed(SEED + fold)
+            m = make_model(X.shape[2])
+            m, _ = fit(m, _t(X[tr2]), _t(y_cls[tr2]), _t(y_reg[tr2]),
+                       val=(_t(X[va]), _t(y_cls[va]), _t(y_reg[va])), epochs=120, reg_weight=1.0)
+            _, rate, _ = predict(m, _t(X[te]))
+            pred[te] = rate * sd + mu
+        return stats.pearsonr(age, pred)[0], leak
+
+    r_rec, _ = run(StratifiedKFold(5, shuffle=True, random_state=SEED), grouped=False)
+    r_grp, leak = run(GroupKFold(5), grouped=True)
+
+    print(f"  recording-level CV (original, potentially leaky): r = {r_rec:.3f}")
+    print(f"  subject-grouped CV (no subject in train+test):     r = {r_grp:.3f}")
+    print(f"  subject overlap across grouped folds: {leak} (must be 0)")
+    drop = r_rec - r_grp
+    if leak == 0 and drop < 0.07:
+        v = f"SURVIVES (r barely changes: {r_rec:.2f}->{r_grp:.2f}, no leakage)"
+    elif r_grp > 0.3:
+        v = f"WEAKENED (r drops {r_rec:.2f}->{r_grp:.2f} but still real)"
+    else:
+        v = f"FAILS (r collapses {r_rec:.2f}->{r_grp:.2f} -> the age finding was leakage)"
+    print(f"  VERDICT: {v}\n")
+
+
+CONTROLS = {"A": control_a, "B": control_b, "C": control_c, "D": control_d}
 
 if __name__ == "__main__":
     for key in (sys.argv[1:] or ["A"]):
