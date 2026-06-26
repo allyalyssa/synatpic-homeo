@@ -28,6 +28,7 @@ def detect_subject(npz_path):
     d = np.load(npz_path, allow_pickle=True)
     epochs = d["epochs"]                         # (n_nrem, n_ch, n_samp), volts
     epoch_idx = d["epoch_idx"]
+    stages = d["stages"]                          # per kept NREM epoch (1/2/3)
     ch_names = [str(c) for c in d["ch_names"]]
     sf = float(d["sfreq"])
     n_nrem, n_ch, n_samp = epochs.shape
@@ -51,10 +52,13 @@ def detect_subject(npz_path):
     return {
         "ch_idx": ch_idx,
         "slope": df["Slope"].values.astype(float),
+        "ptp": df["PTP"].values.astype(float),        # peak-to-peak amplitude (uV)
         "night_sec": night_sec.astype(float),
-        # times of the retained NREM epochs; needed to normalize wave counts into
-        # a density (waves per minute of NREM) per temporal bin.
+        "sw_stage": stages[j].astype(int),            # sleep stage of each wave's epoch
+        # times + stages of the retained NREM epochs; needed to normalize wave counts
+        # into a density (waves per minute of NREM, or per minute of N2/N3) per bin.
         "nrem_sec": (epoch_idx * PREP["epoch_sec"]).astype(float),
+        "nrem_stage": stages.astype(int),
         "ch_names": ch_names,
     }
 
