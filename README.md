@@ -14,26 +14,25 @@ classification/regression head, and read **gradient saliency** as the scientific
 payload: does the model rely on early NREM and weight frontal regions, as SHY
 predicts?
 
-## Key findings (DREAMS n=27 patients + n=20 healthy; Sleep-EDF n=153)
+## Key findings (post stress-test — see `STRESS_TEST.md`)
 
-1. **Slope/density dissociation (all three cohorts at full N).** Slow-wave
-   *density* falls steeply overnight (DREAMS healthy 16.6 → 4.6 waves/min, p≈3e-6;
-   Sleep-EDF 3.3 → 1.0, p≈4e-10) but per-wave *slope* is essentially flat
-   (p=0.13–0.70) — homeostatic downscaling shows up as *fewer* waves, not
-   *shallower* ones, so the classic slope proxy alone carries almost no signal. We
-   therefore model both measures; the model leans on density (66–79% of saliency).
-   (An apparent Sleep-EDF slope decline at n=30 did not survive at n=153 — a
-   small-sample fluctuation, which is exactly why we scaled the replication up.)
-2. **Attention is not a faithful localizer.** On synthetic data with a known
-   answer, the model classifies perfectly yet its attention is flat; only
-   gradient saliency localizes. We keep attention but base claims on saliency
-   ("Attention is not Explanation", Jain & Wallace 2019).
-3. **The model deviates from SHY** in both cohorts: saliency concentrates on
-   *late* NREM (p≈0.001–0.003), not early, and shows *no frontal predominance*.
-   The late-night emphasis is interpretable — density is near-ceiling early for
-   everyone, so the between-subject variance that separates fast/slow dissipaters
-   lives late in the night. Classification stays modest (AUC 0.76 / 0.79, CIs
-   exclude 0.5 but are wide at this N), so these are exploratory signals.
+Preliminary findings were deliberately stress-tested with rigorous controls
+(`controls.py`). Several did NOT survive; reported honestly rather than hidden.
+
+1. **Survives:** slow-wave density declines overnight and validly tracks SWA
+   (within-subject r 0.82–0.96); sleep EEG predicts subject age (held-out r≈0.5,
+   not leakage or sleep-quality confound); attention is not a faithful localizer
+   (synthetic demo), so claims use gradient saliency, validated by integrated
+   gradients + the Adebayo randomization test.
+2. **DEAD — the slope/density dissociation** ("flat slope → fewer not shallower")
+   does not generalize: once amplitude is matched, slope *declines* in Sleep-EDF
+   (classical SHY). It survives only in N=20 healthy DREAMS.
+3. **DEAD — the "trajectory/sequence" thesis:** a static mean-feature model with
+   no temporal information matches the LSTM at predicting age (r=0.54 vs 0.53), so
+   the sequence model/attention add nothing — the age signal is a static SWA
+   *level*, essentially re-confirming known age-related SWA decline.
+4. **Untested:** out-of-cohort transfer (needs MESA/MrOS) — the single most
+   important missing validation.
 
 ## Pipeline (9 stages)
 
