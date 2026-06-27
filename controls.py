@@ -256,7 +256,127 @@ def control_d():
     print(f"  VERDICT: {v}\n")
 
 
-CONTROLS = {"A": control_a, "B": control_b, "C": control_c, "D": control_d}
+# ---------------------------------------------------------------------------
+# Control E — does the trajectory predict age BEYOND sleep-quality confounds?
+# ---------------------------------------------------------------------------
+def _confounds(ids):
+    """Per-subject nuisance vars: TST (NREM min), fragmentation (bouts/hr), mean SW amplitude."""
+    tst, frag, amp = [], [], []
+    for sid in ids:
+        p = np.load(PATHS["sleep_edf_prep"] / f"{sid}.npz", allow_pickle=True)
+        eidx = p["epoch_idx"]
+        nrem_min = len(eidx) * 0.5
+        bouts = 1 + int((np.diff(eidx) > 1).sum())          # NREM bouts (epoch_idx gaps)
+        sw = np.load(PATHS["sleep_edf_sw"] / f"{sid}.npz", allow_pickle=True)
+        tst.append(nrem_min)
+        frag.append(bouts / (nrem_min / 60 + 1e-9))
+        amp.append(float(sw["ptp"].mean()))
+    return np.column_stack([tst, frag, amp])
+
+
+def _resid(y, C):
+    beta, *_ = np.linalg.lstsq(C, y, rcond=None)
+    return y - C @ beta
+
+
+def control_e():
+    print(f"=== CONTROL E: age beyond sleep-quality confounds (seed={SEED_USED}) ===")
+    print("If the trajectory only predicts age via fragmentation/TST/amplitude, partialling")
+    print("those out should kill the correlation between predicted and true age.\n")
+
+    d = np.load(PATHS["logs"] / "sleep_edf_age_oof.npz", allow_pickle=True)
+    age, pred = d["age"].astype(float), d["pred_age"].astype(float)
+    hz = np.load(PATHS["harmonized"] / "sleep_edf.npz", allow_pickle=True)
+    ids = [str(i) for i in hz["ids"]]
+    Z = _confounds(ids)
+    names = ["TST(min)", "fragmentation", "mean SW amp"]
+
+    print(f"  N={len(age)}. Confound correlations with true age:")
+    for j, nm in enumerate(names):
+        r = stats.pearsonr(Z[:, j], age)[0]
+        print(f"    {nm:16} r={r:+.2f}")
+
+    C = np.column_stack([np.ones(len(age)), Z])
+    r_raw = stats.pearsonr(age, pred)[0]
+    r_part, p_part = stats.pearsonr(_resid(age, C), _resid(pred, C))
+    # how well do confounds ALONE predict age (in-sample multiple R)?
+    r_conf = np.corrcoef(C @ np.linalg.lstsq(C, age, rcond=None)[0], age)[0, 1]
+
+    print(f"\n  confounds-alone multiple r (age ~ TST+frag+amp): {r_conf:.2f}")
+    print(f"  raw      r(predicted age, true age):              {r_raw:.2f}")
+    print(f"  PARTIAL  r controlling for confounds:             {r_part:.2f} (p={p_part:.1e})")
+    if r_part > 0.3 and p_part < 0.05:
+        v = f"SURVIVES (trajectory predicts age beyond confounds: partial r={r_part:.2f})"
+    elif r_part > 0.15 and p_part < 0.05:
+        v = f"WEAKENED (partial r drops to {r_part:.2f} but still significant)"
+    else:
+        v = f"FAILS (partial r collapses to {r_part:.2f} -> age signal was sleep-quality)"
+    print(f"  VERDICT: {v}\n")
+
+
+# ---------------------------------------------------------------------------
+# Control F — does the trajectory beat a static (no-time) summary?
+# ---------------------------------------------------------------------------
+def control_f():
+    from sklearn.model_selection import GroupKFold
+    from sklearn.linear_model import Ridge
+    from sklearn.ensemble import RandomForestRegressor
+    from age_prediction import get_ages
+
+    print(f"=== CONTROL F: static-vs-trajectory baseline (seed={SEED_USED}) ===")
+    print("Novelty claim: the TEMPORAL trajectory predicts age better than a static")
+    print("summary. If a no-time mean-feature model matches it, the sequence adds nothing.\n")
+
+    d = np.load(PATHS["harmonized"] / "sleep_edf.npz", allow_pickle=True)
+    X = d["X"].astype("float32")
+    ids = [str(i) for i in d["ids"]]
+    feats = [str(f) for f in d["feature_names"]]
+    age = get_ages(ids)
+    groups = np.array([i[3:5] for i in ids])
+
+    # static features: mean over the 12 bins of the region features (no temporal order)
+    reg_idx = [i for i, f in enumerate(feats) if not f.endswith("phase")]
+    Xs = X[:, :, reg_idx].mean(axis=1)                  # (N, 6): mean slope+density per region
+
+    gkf = GroupKFold(5)
+    for name, mdl in [("Ridge (linear)", Ridge(alpha=1.0)),
+                      ("RandomForest", RandomForestRegressor(n_estimators=300, random_state=SEED))]:
+        pred = np.zeros(len(age))
+        for tr, te in gkf.split(Xs, age, groups):
+            mdl.fit(Xs[tr], age[tr])
+            pred[te] = mdl.predict(Xs[te])
+        r = stats.pearsonr(age, pred)[0]
+        mae = np.mean(np.abs(age - pred))
+        print(f"  STATIC {name:16} held-out r={r:.3f}, MAE={mae:.1f} yr")
+
+    r_traj = float(np.load(PATHS["logs"] / "sleep_edf_age_oof.npz")["r"])
+    # best static
+    best_static = max(
+        stats.pearsonr(age, _cv_static(Xs, age, groups, Ridge(alpha=1.0)))[0],
+        stats.pearsonr(age, _cv_static(Xs, age, groups,
+                       RandomForestRegressor(n_estimators=300, random_state=SEED)))[0])
+    print(f"\n  TRAJECTORY (LSTM) held-out r = {r_traj:.3f}")
+    print(f"  best STATIC          held-out r = {best_static:.3f}")
+    gain = r_traj - best_static
+    if gain > 0.05:
+        v = f"SURVIVES (trajectory beats static by dr={gain:+.2f})"
+    elif gain > -0.05:
+        v = f"FAILS-as-novelty (trajectory ties static, dr={gain:+.2f} -> sequence adds nothing; age signal is a static SWA level)"
+    else:
+        v = f"FAILS (static BEATS trajectory by {-gain:.2f})"
+    print(f"  VERDICT: {v}\n")
+
+
+def _cv_static(Xs, age, groups, mdl):
+    from sklearn.model_selection import GroupKFold
+    pred = np.zeros(len(age))
+    for tr, te in GroupKFold(5).split(Xs, age, groups):
+        mdl.fit(Xs[tr], age[tr]); pred[te] = mdl.predict(Xs[te])
+    return pred
+
+
+CONTROLS = {"A": control_a, "B": control_b, "C": control_c, "D": control_d,
+            "E": control_e, "F": control_f}
 
 if __name__ == "__main__":
     for key in (sys.argv[1:] or ["A"]):
