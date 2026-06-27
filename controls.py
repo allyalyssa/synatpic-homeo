@@ -375,8 +375,122 @@ def _cv_static(Xs, age, groups, mdl):
     return pred
 
 
+# ---------------------------------------------------------------------------
+# Control H — un-pool the density decline (per-cohort effect sizes + CIs)
+# ---------------------------------------------------------------------------
+def control_h(n_boot=5000):
+    rng = np.random.default_rng(SEED_USED)
+    print(f"=== CONTROL H: per-cohort density decline (seed={SEED_USED}) ===")
+    print("The pooled p~4e-10 mixes hardware + age. Report each cohort separately with")
+    print("effect size (Cohen dz) and bootstrap 95% CI. Patients analyzed apart.\n")
+
+    for ds in COHORTS:
+        e_tot, l_tot, e_n3, l_n3 = [], [], [], []
+        for subj, d in _load_sw(ds):
+            night, sw_stage = d["night_sec"], d["sw_stage"]
+            nrem_sec, nrem_stage = d["nrem_sec"], d["nrem_stage"]
+            t0, t1 = nrem_sec.min(), nrem_sec.max()
+            third = (t1 - t0) / 3
+            em, lm = (nrem_sec < t0 + third).sum() * 0.5, (nrem_sec > t1 - third).sum() * 0.5
+            if em > 2 and lm > 2:
+                e_tot.append((night < t0 + third).sum() / em)
+                l_tot.append((night > t1 - third).sum() / lm)
+            e3 = ((nrem_sec < t0 + third) & (nrem_stage == 3)).sum() * 0.5
+            l3 = ((nrem_sec > t1 - third) & (nrem_stage == 3)).sum() * 0.5
+            if e3 >= 3 and l3 >= 3:
+                e_n3.append(((night < t0 + third) & (sw_stage == 3)).sum() / e3)
+                l_n3.append(((night > t1 - third) & (sw_stage == 3)).sum() / l3)
+
+        print(f"--- {PRETTY[ds]} ---")
+        for lab, e, l in [("total-NREM", e_tot, l_tot), ("N3-only", e_n3, l_n3)]:
+            e, l = np.array(e), np.array(l)
+            if len(e) < 5:
+                print(f"  {lab:11} N={len(e)} (too few)")
+                continue
+            diff = e - l
+            dz = diff.mean() / (diff.std(ddof=1) + 1e-12)
+            boot = [np.mean(diff[rng.integers(0, len(diff), len(diff))]) for _ in range(n_boot)]
+            lo, hi = np.percentile(boot, [2.5, 97.5])
+            p = stats.ttest_rel(e, l)[1]
+            ok = "replicates" if lo > 0 else "CI CROSSES 0"
+            print(f"  {lab:11} N={len(e):3d}  decline {diff.mean():+5.2f} waves/min "
+                  f"[95% CI {lo:+.2f},{hi:+.2f}]  dz={dz:+.2f}  p={p:.1e}  ({ok})")
+        print()
+
+
+# ---------------------------------------------------------------------------
+# Control I — interpretability hygiene (integrated gradients + Adebayo test)
+# ---------------------------------------------------------------------------
+def _temporal(sal, feats):
+    ridx = [i for i, f in enumerate(feats) if not f.endswith("phase")]
+    t = sal[:, :, ridx].mean(axis=2).mean(0)
+    return t / t.sum()
+
+
+def control_i(steps=50):
+    import torch
+    from train import set_seed, fit, _t
+    from model import make_model
+    from age_prediction import get_ages
+
+    print(f"=== CONTROL I: interpretability hygiene (seed={SEED_USED}) ===")
+    print("(1) Does integrated gradients agree with raw-gradient saliency?")
+    print("(2) Adebayo 2018: randomize model weights -> saliency MUST change, else untrustworthy.\n")
+
+    d = np.load(PATHS["harmonized"] / "sleep_edf.npz", allow_pickle=True)
+    X = d["X"].astype("float32")
+    feats = [str(f) for f in d["feature_names"]]
+    age = get_ages([str(i) for i in d["ids"]])
+    mu, sd = age.mean(), age.std()
+    set_seed(SEED_USED)
+    model = make_model(X.shape[2])
+    model, _ = fit(model, _t(X), _t((age >= np.median(age)).astype("float32")),
+                   _t(((age - mu) / sd).astype("float32")), epochs=120, reg_weight=1.0)
+
+    def raw_grad(m):
+        m.eval(); x = _t(X).clone().requires_grad_(True)
+        _, rate, _ = m(x); m.zero_grad(); rate.sum().backward()
+        return x.grad.abs().detach().numpy()
+
+    def integrated_grad(m, n_steps):
+        m.eval(); x = _t(X); base = torch.zeros_like(x)
+        total = torch.zeros_like(x)
+        for k in range(1, n_steps + 1):
+            s = (base + (k / n_steps) * (x - base)).clone().requires_grad_(True)
+            _, rate, _ = m(s); m.zero_grad(); rate.sum().backward()
+            total += s.grad
+        return ((x - base) * total / n_steps).abs().detach().numpy()
+
+    t_raw = _temporal(raw_grad(model), feats)
+    t_ig = _temporal(integrated_grad(model, steps), feats)
+    r_methods = stats.pearsonr(t_raw, t_ig)[0]
+    print(f"  raw-grad temporal saliency : early {t_raw[:3].sum():.0%} late {t_raw[9:].sum():.0%}, peak {t_raw.argmax()}")
+    print(f"  integrated-grad saliency   : early {t_ig[:3].sum():.0%} late {t_ig[9:].sum():.0%}, peak {t_ig.argmax()}")
+    print(f"  raw vs IG agreement r = {r_methods:.2f}")
+
+    # Adebayo: saliency from random-weight models should NOT match the trained one
+    rand_corrs = []
+    for s in range(5):
+        set_seed(1000 + s)
+        rt = _temporal(raw_grad(make_model(X.shape[2])), feats)
+        rand_corrs.append(stats.pearsonr(t_raw, rt)[0])
+    rc = float(np.mean(rand_corrs))
+    print(f"  Adebayo: corr(trained saliency, random-weight saliency) = {rc:+.2f} (mean of 5)")
+
+    ok_methods = r_methods > 0.5
+    ok_adebayo = rc < 0.5
+    if ok_methods and ok_adebayo:
+        v = "SURVIVES (IG agrees with raw grad; saliency is model-dependent, not just input structure)"
+    elif not ok_adebayo:
+        v = (f"FAILS (random-weight saliency correlates {rc:+.2f} with trained -> saliency reflects "
+             "INPUT structure, not the learned model; early-NREM claim is untrustworthy)")
+    else:
+        v = f"WEAKENED (IG and raw-grad disagree, r={r_methods:.2f})"
+    print(f"  VERDICT: {v}\n")
+
+
 CONTROLS = {"A": control_a, "B": control_b, "C": control_c, "D": control_d,
-            "E": control_e, "F": control_f}
+            "E": control_e, "F": control_f, "H": control_h, "I": control_i}
 
 if __name__ == "__main__":
     for key in (sys.argv[1:] or ["A"]):
